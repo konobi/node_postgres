@@ -6,7 +6,10 @@
 
 using namespace v8;
 using namespace node;
-
+static Persistent<String> ready_symbol;
+static Persistent<String> result_symbol;
+static Persistent<String> close_symbol;
+static Persistent<String> connect_symbol;
 #define READY_STATE_SYMBOL String::NewSymbol("readyState")
 
 class Connection : public EventEmitter {
@@ -20,6 +23,11 @@ class Connection : public EventEmitter {
 
     t->Inherit(EventEmitter::constructor_template);
     t->InstanceTemplate()->SetInternalFieldCount(1);
+
+    close_symbol = NODE_PSYMBOL("close");
+    connect_symbol = NODE_PSYMBOL("connect");
+    result_symbol = NODE_PSYMBOL("result");
+    ready_symbol = NODE_PSYMBOL("ready");
 
     NODE_SET_PROTOTYPE_METHOD(t, "connect", Connect);
     NODE_SET_PROTOTYPE_METHOD(t, "close", Close);
@@ -67,7 +75,7 @@ class Connection : public EventEmitter {
      */
     ev_io_start(EV_DEFAULT_ &write_watcher_);
     
-    Attach();
+    Ref();
 
     return true;
   }
@@ -112,11 +120,11 @@ class Connection : public EventEmitter {
     PQfinish(connection_);
     connection_ = NULL;
     if (exception.IsEmpty()) {
-      Emit("close", 0, NULL);
+      Emit(close_symbol, 0, NULL);
     } else {
-      Emit("close", 1, &exception);
+      Emit(close_symbol, 1, &exception);
     }
-    Detach();
+    Unref();
   }
 
   char * ErrorMessage ( )
@@ -297,12 +305,12 @@ class Connection : public EventEmitter {
     }
 
     if (status == PGRES_POLLING_OK) {
-      Emit("connect", 0, NULL);
+      Emit(connect_symbol, 0, NULL);
       connecting_ = resetting_ = false;
       ev_io_start(EV_DEFAULT_ &read_watcher_);
       return;
     }
-    
+
     CloseConnectionWithError();
   }
 
@@ -337,7 +345,7 @@ class Connection : public EventEmitter {
 
       default:
 #ifndef NDEBUG
-        printf("Unhandled OID: %d\n", t);
+//        printf("Unhandled OID: %d\n", t);
 #endif
         cell = String::New(string);
     }
@@ -428,26 +436,26 @@ class Connection : public EventEmitter {
     switch (PQresultStatus(result)) {
       case PGRES_EMPTY_QUERY:
       case PGRES_COMMAND_OK:
-        Emit("result", 0, NULL);
+        Emit(result_symbol, 0, NULL);
         break;
 
       case PGRES_TUPLES_OK:
         tuples = BuildTuples(result);
-        Emit("result", 1, &tuples);
+        Emit(result_symbol, 1, &tuples);
         break;
 
       case PGRES_COPY_OUT:
       case PGRES_COPY_IN:
         assert(0 && "Not yet implemented.");
         exception = Exception::Error(String::New("Not yet implemented"));
-        Emit("result", 1, &exception);
+        Emit(result_symbol, 1, &exception);
         break;
 
       case PGRES_BAD_RESPONSE:
       case PGRES_NONFATAL_ERROR:
       case PGRES_FATAL_ERROR:
         exception = BuildResultException(result);
-        Emit("result", 1, &exception);
+        Emit(result_symbol, 1, &exception);
         break;
     }
   }
@@ -478,7 +486,7 @@ class Connection : public EventEmitter {
           EmitResult(result);
           PQclear(result);
         }
-        Emit("ready", 0, NULL);
+        Emit(ready_symbol, 0, NULL);
       }      
     }
 
