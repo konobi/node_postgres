@@ -11,17 +11,14 @@ Connection.prototype.maybeDispatchQuery = function () {
   if (this.readyState != "OK") return;
   if (!this.currentQuery && this._queries.length > 0) {
     this.currentQuery = this._queries.shift();
-    this.dispatchQuery(this.currentQuery.sql);
+    this.dispatchQuery(this.currentQuery[0]);
   }
 };
 
-Connection.prototype.query = function (sql) {
-  if (!this._queries) this._queries = [];
-  var promise = new process.Promise;
-  promise.sql = sql;
-  this._queries.push(promise);
+Connection.prototype.query = function (sql, callback) {
+  this._queries = this._queries || [];
+  this._queries.push([sql, callback]);
   this.maybeDispatchQuery();
-  return promise;
 };
 
 exports.createConnection = function (conninfo) {
@@ -33,13 +30,9 @@ exports.createConnection = function (conninfo) {
 
   c.addListener("result", function (arg) {
     process.assert(c.currentQuery);
-    var promise = c.currentQuery;
+    var callback = c.currentQuery[1];
     c.currentQuery = null;
-    if (arg instanceof Error)  {
-      promise.emitError([arg]);
-    } else {
-      promise.emitSuccess([arg]);
-    }
+    if (callback) callback(arg[0]);
   });
 
   c.addListener("ready", function () {
