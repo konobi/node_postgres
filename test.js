@@ -34,3 +34,10 @@ c.query("select ____ from test limit 1;").addCallback(function (rows) {
   puts("severity: "+ e.severity);
   c.close();
 });
+
+c.query("select * from test;").addCallback(function(){
+  c.query("select * from test;").addCallback(function(row){
+    puts("result4:");
+    p(rows);
+  });
+});
